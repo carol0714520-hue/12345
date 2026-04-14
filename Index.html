@@ -3,7 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="一個使用 HTML5 Canvas 製作的現代化復刻版小恐龍遊戲，支援深色模式與觸控操作。">
+    <meta name="author" content="GitHub User">
     <title>Dino Run - 現代復刻版</title>
+    
+    <!-- Open Graph (GitHub 預覽用) -->
+    <meta property="og:title" content="Dino Run - 現代復刻版">
+    <meta property="og:description" content="經典斷網遊戲的現代化 Web 實現">
+    <meta property="og:type" content="website">
+
     <style>
         :root {
             --bg-color: #f7f7f7;
@@ -36,11 +44,12 @@
             transition: background-color 0.3s ease;
             touch-action: manipulation;
             overflow: hidden;
+            user-select: none;
         }
 
         #game-container {
             position: relative;
-            width: 100%;
+            width: 95%;
             max-width: 800px;
             padding: 20px;
         }
@@ -49,7 +58,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             width: 100%;
         }
 
@@ -57,6 +66,7 @@
             font-family: 'Courier New', Courier, monospace;
             font-weight: bold;
             font-size: 1.2rem;
+            letter-spacing: 2px;
         }
 
         canvas {
@@ -66,6 +76,7 @@
             background-color: transparent;
             border-bottom: 2px solid var(--ground-color);
             cursor: pointer;
+            border-radius: 4px;
         }
 
         .ui-overlay {
@@ -74,10 +85,13 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            background: rgba(var(--bg-color), 0.8);
-            padding: 20px;
-            border-radius: 12px;
+            background: rgba(var(--bg-color), 0.9);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             display: none;
+            backdrop-filter: blur(5px);
+            z-index: 10;
         }
 
         .ui-overlay.active {
@@ -88,12 +102,18 @@
             background-color: var(--accent-color);
             color: white;
             border: none;
-            padding: 10px 25px;
+            padding: 12px 30px;
             font-size: 1.1rem;
-            border-radius: 25px;
+            border-radius: 50px;
             cursor: pointer;
-            transition: transform 0.1s;
+            transition: all 0.2s;
             margin-top: 15px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
         }
 
         button:active {
@@ -101,27 +121,29 @@
         }
 
         .controls-hint {
-            margin-top: 20px;
-            font-size: 0.9rem;
-            opacity: 0.7;
+            margin-top: 25px;
+            font-size: 0.85rem;
+            opacity: 0.6;
+            text-align: center;
         }
 
-        /* 主題切換按鈕 */
         #theme-toggle {
             position: fixed;
             top: 20px;
             right: 20px;
-            background: none;
+            background: rgba(var(--text-color), 0.1);
             border: 1px solid var(--text-color);
             color: var(--text-color);
-            padding: 5px 10px;
+            padding: 8px 15px;
             font-size: 0.8rem;
+            border-radius: 20px;
+            z-index: 20;
         }
     </style>
 </head>
 <body>
 
-    <button id="theme-toggle">切換深色模式</button>
+    <button id="theme-toggle">切換模式</button>
 
     <div id="game-container">
         <div class="header">
@@ -134,18 +156,18 @@
 
         <div id="overlay" class="ui-overlay active">
             <h2 id="overlay-title">DINO RUN</h2>
-            <p id="overlay-msg">點擊畫面或按空白鍵開始</p>
+            <p id="overlay-msg">準備好避開障礙物了嗎？</p>
             <button id="start-btn">開始遊戲</button>
         </div>
 
         <div class="controls-hint">
-            提示：電腦端使用 [空白鍵] 跳躍，手機端直接 [點擊螢幕]
+            [空白鍵] 跳躍 / [點擊螢幕] 開始與操作
         </div>
     </div>
 
 <script>
     /**
-     * 遊戲專案邏輯
+     * GitHub 上傳優化版
      */
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
@@ -155,30 +177,58 @@
     const startBtn = document.getElementById("start-btn");
     const themeToggle = document.getElementById("theme-toggle");
 
-    // 畫布基礎設定 (邏輯解析度)
     const BASE_WIDTH = 800;
     const BASE_HEIGHT = 200;
     canvas.width = BASE_WIDTH;
     canvas.height = BASE_HEIGHT;
 
-    // 遊戲狀態
-    let gameState = 'START'; // START, PLAYING, GAMEOVER
+    let gameState = 'START';
     let score = 0;
     let highScore = localStorage.getItem('dinoHighScore') || 0;
     let gameSpeed = 6;
     let frameCount = 0;
+    let colors = {};
 
-    // 物理常數
     const GRAVITY = 0.6;
     const JUMP_POWER = -12;
     const GROUND_Y = 160;
 
-    // 資源顏色 (從 CSS 變數獲取)
-    function getColor(varName) {
-        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    // 快取顏色變數，避免動畫迴圈中讀取 DOM
+    function updateColors() {
+        const style = getComputedStyle(document.documentElement);
+        colors = {
+            dino: style.getPropertyValue('--dino-color').trim(),
+            cactus: style.getPropertyValue('--cactus-color').trim(),
+            ground: style.getPropertyValue('--ground-color').trim(),
+            bg: style.getPropertyValue('--bg-color').trim()
+        };
+    }
+    updateColors();
+
+    // 音效合成器 (免外部檔案)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, type, duration) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
     }
 
-    // 遊戲物件
+    const sounds = {
+        jump: () => playTone(400, 'square', 0.1),
+        score: () => playTone(880, 'sine', 0.2),
+        die: () => {
+            playTone(200, 'sawtooth', 0.1);
+            playTone(150, 'sawtooth', 0.2);
+        }
+    };
+
     const dino = {
         x: 50,
         y: GROUND_Y,
@@ -188,6 +238,7 @@
         jump() {
             if (this.y === GROUND_Y) {
                 this.dy = JUMP_POWER;
+                sounds.jump();
             }
         },
         update() {
@@ -199,11 +250,9 @@
             }
         },
         draw() {
-            ctx.fillStyle = getColor('--dino-color');
-            // 簡易畫出恐龍形狀 (可替換為圖片)
+            ctx.fillStyle = colors.dino;
             ctx.fillRect(this.x, this.y, this.width, this.height);
-            // 畫眼睛
-            ctx.fillStyle = getColor('--bg-color');
+            ctx.fillStyle = colors.bg;
             ctx.fillRect(this.x + 25, this.y + 8, 5, 5);
         }
     };
@@ -212,8 +261,8 @@
 
     class Obstacle {
         constructor() {
-            this.width = 20 + Math.random() * 20;
-            this.height = 30 + Math.random() * 30;
+            this.width = 15 + Math.random() * 25;
+            this.height = 30 + Math.random() * 35;
             this.x = BASE_WIDTH;
             this.y = GROUND_Y + 40 - this.height;
         }
@@ -221,12 +270,11 @@
             this.x -= gameSpeed;
         }
         draw() {
-            ctx.fillStyle = getColor('--cactus-color');
+            ctx.fillStyle = colors.cactus;
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }
     }
 
-    // 更新分數顯示
     function updateScoreDisplay() {
         const s = Math.floor(score).toString().padStart(5, '0');
         const h = Math.floor(highScore).toString().padStart(5, '0');
@@ -234,45 +282,41 @@
         highDisplay.textContent = h;
     }
 
-    // 碰撞檢測
     function checkCollision(a, b) {
-        return a.x < b.x + b.width &&
-               a.x + a.width > b.x &&
-               a.y < b.y + b.height &&
-               a.y + a.height > b.y;
+        // 稍微縮減碰撞判定範圍 (Hitbox) 讓遊戲體驗更好
+        const padding = 5;
+        return a.x + padding < b.x + b.width &&
+               a.x + a.width - padding > b.x &&
+               a.y + padding < b.y + b.height &&
+               a.y + a.height - padding > b.y;
     }
 
-    // 遊戲主迴圈
     function gameLoop() {
         if (gameState !== 'PLAYING') return;
 
         ctx.clearRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         
-        // 畫地平線
-        ctx.strokeStyle = getColor('--ground-color');
+        // 繪製地平線
+        ctx.strokeStyle = colors.ground;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, GROUND_Y + 40);
         ctx.lineTo(BASE_WIDTH, GROUND_Y + 40);
         ctx.stroke();
 
-        // 恐龍邏輯
         dino.update();
         dino.draw();
 
-        // 分數與難度
         score += 0.15;
-        if (Math.floor(score) % 100 === 0 && score > 1) {
-            gameSpeed += 0.005; // 緩慢加速
+        if (Math.floor(score) > 0 && Math.floor(score) % 100 === 0 && (score % 0.15 < 0.1)) {
+            sounds.score();
+            gameSpeed += 0.1;
         }
         updateScoreDisplay();
 
-        // 障礙物邏輯
         frameCount++;
-        if (frameCount % Math.floor(1000 / gameSpeed) === 0 || frameCount === 1) {
-            if (Math.random() > 0.5) {
-                obstacles.push(new Obstacle());
-            }
+        if (frameCount % Math.floor(120 / (gameSpeed/5)) === 0) {
+            obstacles.push(new Obstacle());
         }
 
         for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -292,6 +336,7 @@
     }
 
     function startGame() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         gameState = 'PLAYING';
         score = 0;
         gameSpeed = 6;
@@ -303,6 +348,7 @@
 
     function endGame() {
         gameState = 'GAMEOVER';
+        sounds.die();
         if (score > highScore) {
             highScore = score;
             localStorage.setItem('dinoHighScore', highScore);
@@ -313,43 +359,31 @@
         overlay.classList.add('active');
     }
 
-    // 事件監聽
     const handleInput = (e) => {
-        if (e.code === 'Space' || e.type === 'touchstart' || e.type === 'mousedown') {
+        if (e.code === 'Space' || e.type === 'touchstart') {
             if (gameState === 'PLAYING') {
                 dino.jump();
-            } else if (gameState === 'START' || gameState === 'GAMEOVER') {
-                // 只有在點擊按鈕以外的地方時才觸發，避免重複
-                if (e.target !== startBtn && e.target !== themeToggle) {
-                    startGame();
-                }
+            } else if (gameState !== 'PLAYING') {
+                if (e.target !== themeToggle) startGame();
             }
-            if (e.type === 'touchstart') e.preventDefault();
+            if (e.type === 'touchstart' && gameState === 'PLAYING') e.preventDefault();
         }
     };
 
     window.addEventListener('keydown', handleInput);
     canvas.addEventListener('touchstart', handleInput, { passive: false });
-    startBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        startGame();
-    });
+    startBtn.addEventListener('click', startGame);
 
-    // 主題切換邏輯
     themeToggle.addEventListener('click', () => {
-        const currentTheme = document.body.getAttribute('data-theme');
-        if (currentTheme === 'dark') {
+        if (document.body.hasAttribute('data-theme')) {
             document.body.removeAttribute('data-theme');
-            themeToggle.textContent = '切換深色模式';
         } else {
             document.body.setAttribute('data-theme', 'dark');
-            themeToggle.textContent = '切換淺色模式';
         }
+        updateColors();
     });
 
-    // 初始化分數
     updateScoreDisplay();
-
 </script>
 </body>
 </html>
