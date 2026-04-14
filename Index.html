@@ -2,173 +2,354 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>簡易版小恐龍遊戲</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dino Run - 現代復刻版</title>
     <style>
+        :root {
+            --bg-color: #f7f7f7;
+            --text-color: #535353;
+            --dino-color: #535353;
+            --cactus-color: #2b9348;
+            --ground-color: #d3d3d3;
+            --accent-color: #ff4757;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #202124;
+            --text-color: #e8eaed;
+            --dino-color: #ffffff;
+            --cactus-color: #81c995;
+            --ground-color: #3c4043;
+        }
+
         body {
             margin: 0;
             padding: 0;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            background-color: #f7f7f7;
-            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            transition: background-color 0.3s ease;
+            touch-action: manipulation;
             overflow: hidden;
         }
-        canvas {
-            background-color: #fff;
-            border-bottom: 2px solid #535353;
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
         }
-        .info {
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+
+        .scores {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            background-color: transparent;
+            border-bottom: 2px solid var(--ground-color);
+            cursor: pointer;
+        }
+
+        .ui-overlay {
             position: absolute;
-            top: 20px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             text-align: center;
-            color: #535353;
+            background: rgba(var(--bg-color), 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .ui-overlay.active {
+            display: block;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            font-size: 1.1rem;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.1s;
+            margin-top: 15px;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .controls-hint {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        /* 主題切換按鈕 */
+        #theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: 1px solid var(--text-color);
+            color: var(--text-color);
+            padding: 5px 10px;
+            font-size: 0.8rem;
         }
     </style>
 </head>
 <body>
 
-    <div class="info">
-        <h2>按「空白鍵」跳躍</h2>
-        <div id="score">分數: 0</div>
+    <button id="theme-toggle">切換深色模式</button>
+
+    <div id="game-container">
+        <div class="header">
+            <div class="scores">
+                HI <span id="high-score">00000</span> | <span id="current-score">00000</span>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="overlay" class="ui-overlay active">
+            <h2 id="overlay-title">DINO RUN</h2>
+            <p id="overlay-msg">點擊畫面或按空白鍵開始</p>
+            <button id="start-btn">開始遊戲</button>
+        </div>
+
+        <div class="controls-hint">
+            提示：電腦端使用 [空白鍵] 跳躍，手機端直接 [點擊螢幕]
+        </div>
     </div>
-    <canvas id="gameCanvas"></canvas>
 
 <script>
+    /**
+     * 遊戲專案邏輯
+     */
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-    const scoreElement = document.getElementById("score");
+    const scoreDisplay = document.getElementById("current-score");
+    const highDisplay = document.getElementById("high-score");
+    const overlay = document.getElementById("overlay");
+    const startBtn = document.getElementById("start-btn");
+    const themeToggle = document.getElementById("theme-toggle");
 
-    // 設定畫布大小
-    canvas.width = 800;
-    canvas.height = 200;
+    // 畫布基礎設定 (邏輯解析度)
+    const BASE_WIDTH = 800;
+    const BASE_HEIGHT = 200;
+    canvas.width = BASE_WIDTH;
+    canvas.height = BASE_HEIGHT;
 
-    // 遊戲變數
+    // 遊戲狀態
+    let gameState = 'START'; // START, PLAYING, GAMEOVER
     let score = 0;
-    let gameSpeed = 5;
-    let isGameOver = false;
+    let highScore = localStorage.getItem('dinoHighScore') || 0;
+    let gameSpeed = 6;
+    let frameCount = 0;
 
-    // 恐龍屬性
-    const dino = {
-        x: 50,
-        y: 150,
-        width: 40,
-        height: 40,
-        color: "#535353",
-        dy: 0,          // Y軸速度
-        jumpForce: 12,  // 跳躍力
-        gravity: 0.6,   // 重力
-        grounded: false // 是否在地面
-    };
+    // 物理常數
+    const GRAVITY = 0.6;
+    const JUMP_POWER = -12;
+    const GROUND_Y = 160;
 
-    // 障礙物數組
-    const obstacles = [];
-
-    // 監聽按鍵
-    window.addEventListener("keydown", (e) => {
-        if (e.code === "Space" && dino.grounded && !isGameOver) {
-            dino.dy = -dino.jumpForce;
-            dino.grounded = false;
-        }
-        if (isGameOver && e.code === "Space") {
-            resetGame();
-        }
-    });
-
-    // 生成障礙物
-    function spawnObstacle() {
-        let size = Math.random() * (40 - 20) + 20;
-        obstacles.push({
-            x: canvas.width,
-            y: canvas.height - size,
-            width: 20,
-            height: size,
-            color: "#ff4d4d"
-        });
+    // 資源顏色 (從 CSS 變數獲取)
+    function getColor(varName) {
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
     }
 
-    let spawnTimer = 0;
-
-    function update() {
-        if (isGameOver) return;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 恐龍重力邏輯
-        dino.dy += dino.gravity;
-        dino.y += dino.dy;
-
-        // 落地檢測
-        if (dino.y + dino.height > canvas.height) {
-            dino.y = canvas.height - dino.height;
-            dino.dy = 0;
-            dino.grounded = true;
+    // 遊戲物件
+    const dino = {
+        x: 50,
+        y: GROUND_Y,
+        width: 40,
+        height: 40,
+        dy: 0,
+        jump() {
+            if (this.y === GROUND_Y) {
+                this.dy = JUMP_POWER;
+            }
+        },
+        update() {
+            this.dy += GRAVITY;
+            this.y += this.dy;
+            if (this.y > GROUND_Y) {
+                this.y = GROUND_Y;
+                this.dy = 0;
+            }
+        },
+        draw() {
+            ctx.fillStyle = getColor('--dino-color');
+            // 簡易畫出恐龍形狀 (可替換為圖片)
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            // 畫眼睛
+            ctx.fillStyle = getColor('--bg-color');
+            ctx.fillRect(this.x + 25, this.y + 8, 5, 5);
         }
+    };
 
-        // 畫恐龍
-        ctx.fillStyle = dino.color;
-        ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+    let obstacles = [];
 
-        // 障礙物處理
-        spawnTimer++;
-        if (spawnTimer > Math.random() * (100 - 50) + 70) {
-            spawnObstacle();
-            spawnTimer = 0;
+    class Obstacle {
+        constructor() {
+            this.width = 20 + Math.random() * 20;
+            this.height = 30 + Math.random() * 30;
+            this.x = BASE_WIDTH;
+            this.y = GROUND_Y + 40 - this.height;
+        }
+        update() {
+            this.x -= gameSpeed;
+        }
+        draw() {
+            ctx.fillStyle = getColor('--cactus-color');
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+
+    // 更新分數顯示
+    function updateScoreDisplay() {
+        const s = Math.floor(score).toString().padStart(5, '0');
+        const h = Math.floor(highScore).toString().padStart(5, '0');
+        scoreDisplay.textContent = s;
+        highDisplay.textContent = h;
+    }
+
+    // 碰撞檢測
+    function checkCollision(a, b) {
+        return a.x < b.x + b.width &&
+               a.x + a.width > b.x &&
+               a.y < b.y + b.height &&
+               a.y + a.height > b.y;
+    }
+
+    // 遊戲主迴圈
+    function gameLoop() {
+        if (gameState !== 'PLAYING') return;
+
+        ctx.clearRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+        
+        // 畫地平線
+        ctx.strokeStyle = getColor('--ground-color');
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y + 40);
+        ctx.lineTo(BASE_WIDTH, GROUND_Y + 40);
+        ctx.stroke();
+
+        // 恐龍邏輯
+        dino.update();
+        dino.draw();
+
+        // 分數與難度
+        score += 0.15;
+        if (Math.floor(score) % 100 === 0 && score > 1) {
+            gameSpeed += 0.005; // 緩慢加速
+        }
+        updateScoreDisplay();
+
+        // 障礙物邏輯
+        frameCount++;
+        if (frameCount % Math.floor(1000 / gameSpeed) === 0 || frameCount === 1) {
+            if (Math.random() > 0.5) {
+                obstacles.push(new Obstacle());
+            }
         }
 
         for (let i = obstacles.length - 1; i >= 0; i--) {
-            let o = obstacles[i];
-            o.x -= gameSpeed;
+            obstacles[i].update();
+            obstacles[i].draw();
 
-            // 畫障礙物
-            ctx.fillStyle = o.color;
-            ctx.fillRect(o.x, o.y, o.width, o.height);
-
-            // 碰撞檢測
-            if (
-                dino.x < o.x + o.width &&
-                dino.x + dino.width > o.x &&
-                dino.y < o.y + o.height &&
-                dino.y + dino.height > o.y
-            ) {
-                gameOver();
+            if (checkCollision(dino, obstacles[i])) {
+                endGame();
             }
 
-            // 移除超出螢幕的障礙物
-            if (o.x + o.width < 0) {
+            if (obstacles[i].x + obstacles[i].width < 0) {
                 obstacles.splice(i, 1);
-                score++;
-                scoreElement.innerHTML = `分數: ${score}`;
-                // 每得 10 分加速
-                if (score % 10 === 0) gameSpeed += 0.2;
             }
         }
 
-        requestAnimationFrame(update);
+        requestAnimationFrame(gameLoop);
     }
 
-    function gameOver() {
-        isGameOver = true;
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.font = "30px Arial";
-        ctx.fillText("遊戲結束！按空白鍵重來", canvas.width / 2 - 150, canvas.height / 2);
-    }
-
-    function resetGame() {
+    function startGame() {
+        gameState = 'PLAYING';
         score = 0;
-        scoreElement.innerHTML = `分數: 0`;
-        obstacles.length = 0;
-        gameSpeed = 5;
-        isGameOver = false;
-        dino.y = 150;
-        update();
+        gameSpeed = 6;
+        obstacles = [];
+        frameCount = 0;
+        overlay.classList.remove('active');
+        gameLoop();
     }
 
-    update();
+    function endGame() {
+        gameState = 'GAMEOVER';
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('dinoHighScore', highScore);
+        }
+        document.getElementById('overlay-title').textContent = "GAME OVER";
+        document.getElementById('overlay-msg').textContent = `得分: ${Math.floor(score)}`;
+        startBtn.textContent = "再試一次";
+        overlay.classList.add('active');
+    }
+
+    // 事件監聽
+    const handleInput = (e) => {
+        if (e.code === 'Space' || e.type === 'touchstart' || e.type === 'mousedown') {
+            if (gameState === 'PLAYING') {
+                dino.jump();
+            } else if (gameState === 'START' || gameState === 'GAMEOVER') {
+                // 只有在點擊按鈕以外的地方時才觸發，避免重複
+                if (e.target !== startBtn && e.target !== themeToggle) {
+                    startGame();
+                }
+            }
+            if (e.type === 'touchstart') e.preventDefault();
+        }
+    };
+
+    window.addEventListener('keydown', handleInput);
+    canvas.addEventListener('touchstart', handleInput, { passive: false });
+    startBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startGame();
+    });
+
+    // 主題切換邏輯
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = document.body.getAttribute('data-theme');
+        if (currentTheme === 'dark') {
+            document.body.removeAttribute('data-theme');
+            themeToggle.textContent = '切換深色模式';
+        } else {
+            document.body.setAttribute('data-theme', 'dark');
+            themeToggle.textContent = '切換淺色模式';
+        }
+    });
+
+    // 初始化分數
+    updateScoreDisplay();
+
 </script>
 </body>
 </html>
