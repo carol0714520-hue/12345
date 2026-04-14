@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易版小恐龍遊戲</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f7f7f7;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #fff;
+            border-bottom: 2px solid #535353;
+        }
+        .info {
+            position: absolute;
+            top: 20px;
+            text-align: center;
+            color: #535353;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="info">
+        <h2>按「空白鍵」跳躍</h2>
+        <div id="score">分數: 0</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreElement = document.getElementById("score");
+
+    // 設定畫布大小
+    canvas.width = 800;
+    canvas.height = 200;
+
+    // 遊戲變數
+    let score = 0;
+    let gameSpeed = 5;
+    let isGameOver = false;
+
+    // 恐龍屬性
+    const dino = {
+        x: 50,
+        y: 150,
+        width: 40,
+        height: 40,
+        color: "#535353",
+        dy: 0,          // Y軸速度
+        jumpForce: 12,  // 跳躍力
+        gravity: 0.6,   // 重力
+        grounded: false // 是否在地面
+    };
+
+    // 障礙物數組
+    const obstacles = [];
+
+    // 監聽按鍵
+    window.addEventListener("keydown", (e) => {
+        if (e.code === "Space" && dino.grounded && !isGameOver) {
+            dino.dy = -dino.jumpForce;
+            dino.grounded = false;
+        }
+        if (isGameOver && e.code === "Space") {
+            resetGame();
+        }
+    });
+
+    // 生成障礙物
+    function spawnObstacle() {
+        let size = Math.random() * (40 - 20) + 20;
+        obstacles.push({
+            x: canvas.width,
+            y: canvas.height - size,
+            width: 20,
+            height: size,
+            color: "#ff4d4d"
+        });
+    }
+
+    let spawnTimer = 0;
+
+    function update() {
+        if (isGameOver) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 恐龍重力邏輯
+        dino.dy += dino.gravity;
+        dino.y += dino.dy;
+
+        // 落地檢測
+        if (dino.y + dino.height > canvas.height) {
+            dino.y = canvas.height - dino.height;
+            dino.dy = 0;
+            dino.grounded = true;
+        }
+
+        // 畫恐龍
+        ctx.fillStyle = dino.color;
+        ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+
+        // 障礙物處理
+        spawnTimer++;
+        if (spawnTimer > Math.random() * (100 - 50) + 70) {
+            spawnObstacle();
+            spawnTimer = 0;
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let o = obstacles[i];
+            o.x -= gameSpeed;
+
+            // 畫障礙物
+            ctx.fillStyle = o.color;
+            ctx.fillRect(o.x, o.y, o.width, o.height);
+
+            // 碰撞檢測
+            if (
+                dino.x < o.x + o.width &&
+                dino.x + dino.width > o.x &&
+                dino.y < o.y + o.height &&
+                dino.y + dino.height > o.y
+            ) {
+                gameOver();
+            }
+
+            // 移除超出螢幕的障礙物
+            if (o.x + o.width < 0) {
+                obstacles.splice(i, 1);
+                score++;
+                scoreElement.innerHTML = `分數: ${score}`;
+                // 每得 10 分加速
+                if (score % 10 === 0) gameSpeed += 0.2;
+            }
+        }
+
+        requestAnimationFrame(update);
+    }
+
+    function gameOver() {
+        isGameOver = true;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "30px Arial";
+        ctx.fillText("遊戲結束！按空白鍵重來", canvas.width / 2 - 150, canvas.height / 2);
+    }
+
+    function resetGame() {
+        score = 0;
+        scoreElement.innerHTML = `分數: 0`;
+        obstacles.length = 0;
+        gameSpeed = 5;
+        isGameOver = false;
+        dino.y = 150;
+        update();
+    }
+
+    update();
+</script>
+</body>
+</html>
